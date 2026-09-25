@@ -1,0 +1,45 @@
+Smart move — Copilot's already in your repo context, so it can read all the role files at once and hand back exactly what I need without you pasting a dozen files. Here's a prompt engineered to extract everything for building the 7960 playbook.
+
+One thing first: make sure Copilot actually has the roles on disk to read — it can only inspect files in your workspace. So either have `~/ansible/shared-roles` cloned, or point it at `~/main` if the roles are there. If neither is cloned yet, do the clone first (`git clone git@gitlab.core.sapns2.us:scs/shared/ansible/roles.git shared-roles`), then open that folder in VS Code so Copilot can see it.
+
+---
+
+**Prompt to paste into Copilot:**
+
+> I'm building an Ansible playbook to provision a stock RHEL 9 EC2 instance as a bastion, using three existing roles in this repo: `disk-management`, `repository-management`, and `bastion`. I need you to extract their exact interfaces so I can call them correctly. For **each** of the three roles, read its `defaults/main.yml`, `vars/main.yml`, `tasks/main.yml`, `meta/main.yml`, and `README.md`, and report back:
+>
+> **1. disk-management**
+> - The full structure of the `custom` disk preset — exact nested keys required to define one added volume (volume group name, mount_point, size, type, encrypted, etc.). Give me a concrete YAML example that creates a single ~5GB volume mounted at a custom path.
+> - How the role decides where to run the AWS CLI calls: the exact behavior of `task_delegation` (localhost vs none vs a host), and what AWS credentials/permissions it needs and *where* they must exist.
+> - Whether it can create+attach a brand-new EBS volume, or whether it expects the volume to already exist and only formats/mounts it.
+> - Any `gather_facts` or dependency requirements (boto3, parted, python interpreter path) that must be satisfied on the target host.
+>
+> **2. repository-management**
+> - The exact preset names available for **RHEL 9** under `repository_list` (e.g. is it `base`, `epel`, etc.) and what `application_preset_selection` value I should pass to enable standard Red Hat repos.
+> - The default value of `repo_dns_list` (the repo server endpoints) — list them verbatim.
+> - Whether the role will FAIL on a stock RHEL host that is NOT a golden image (no `/etc/scs-release` file): specifically how `repo_cdn_override` and CDN auto-detection behave when there's no golden-image marker, and whether `repo_connectivity_check` will hard-fail if those `repo_dns_list` endpoints aren't reachable.
+> - The minimal set of variables I must set to just enable the base RHEL repos.
+>
+> **3. bastion**
+> - The exact variable name used to set the **hostname** (the README says it does a hostname rename needing ec2:DescribeInstances — I need to know if it's auto-derived from an EC2 tag or set via a variable like `bastion_hostname`). Tell me precisely how to make the hostname become `c5425849-bastion`.
+> - Confirm the defaults for `bastion_ansible_logging`, `bastion_ansible_logging_config_folder`, `bastion_ansible_logging_path`, `bastion_terraform_setup`, `bastion_terraform_setup_version`, `bastion_terraform_setup_tfenv`.
+> - List every OTHER thing the `bastion` role does by default (walk its `tasks/main.yml`) so I know what side effects to expect — I only want hostname, ansible logging, and terraform install; tell me which default behaviors I should disable and the variable to disable each.
+> - Whether the role sets up any logrotate for `/var/log/ansible` already, or if I need to write that myself.
+>
+> **4. Cross-cutting**
+> - Do any of these three roles depend on other roles (check each `meta/main.yml` dependencies)? List them.
+> - For each role, the minimum `gather_facts` / privilege (`become`) requirement.
+>
+> Output as three clearly-separated sections with concrete YAML `vars:` snippets I can drop into an `include_role` call. Quote exact default values from the files — do not guess or infer; if something isn't in the files, say "not found in files."
+
+---
+
+That last line matters — it forces Copilot to read the actual files rather than pattern-match from its training (which is exactly the failure mode you want to avoid, since these are internal roles it's never seen).
+
+**The four things I most need back** (so you can sanity-check Copilot's answer before pasting it to me):
+1. disk-management's `custom` preset shape + whether it *creates* the volume or just mounts an existing one.
+2. repository-management's RHEL preset name + whether it hard-fails on stock RHEL off-VPN (the connectivity risk).
+3. bastion's hostname variable (the one thing missing from your screenshots).
+4. bastion's full default behavior list (so we disable domain-join / fips / anything we don't want).
+
+Paste Copilot's full response back here and I'll turn it into the complete playbook + ansible.cfg + inventory. If Copilot says "not found in files" for any of the big four, that tells us the role's on a different path and we'll chase it.
